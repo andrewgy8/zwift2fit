@@ -1,0 +1,7 @@
+[project]
+name = "zwift2fit"
+version = "0.1.0"
+description = "A tool to convert Zwift workout files (.zwo) to FIT workout files (.fit)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
