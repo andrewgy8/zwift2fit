@@ -4,4 +4,8 @@ version = "0.1.0"
 description = "A tool to convert Zwift workout files (.zwo) to FIT workout files (.fit)."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "fitparse>=1.2.0",
+    "matplotlib>=3.10.5",
+    "numpy>=2.3.2",
+]
