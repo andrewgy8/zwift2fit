@@ -4,6 +4,7 @@ import datetime
 import os
 import glob
 from typing import List, Dict, Any
+from fit_target_utils import calculate_fit_targets
 
 class FITFileWriter:
     """Improved FIT file writer for workout files"""
@@ -284,47 +285,44 @@ def create_fit_file(segments: List[Dict], output_path: str, workout_name: str = 
         
         # Target is always power-based (type 4), value in watts
         
-        # Determine target power and intensity
+        # Determine target power and intensity using reverse-engineered formula
         if segment['type'] == 'warmup':
-            # For warmup, use power range
-            target_low = int(segment['power_start'] * ftp)
-            target_high = int(segment['power_end'] * ftp)
+            # For warmup, use power range with correct FIT encoding
+            target_low, target_high = calculate_fit_targets(
+                segment['power_start'], segment['power_end']
+            )
             intensity = 2  # warmup
             step_name = f"Warmup {segment['power_start']*100:.0f}-{segment['power_end']*100:.0f}%"
         
         elif segment['type'] == 'cooldown':
-            # For cooldown, use power range
-            target_low = int(segment['power_start'] * ftp)
-            target_high = int(segment['power_end'] * ftp)
+            # For cooldown, use power range with correct FIT encoding
+            target_low, target_high = calculate_fit_targets(
+                segment['power_start'], segment['power_end']
+            )
             intensity = 3  # cooldown
             step_name = f"Cooldown {segment['power_start']*100:.0f}-{segment['power_end']*100:.0f}%"
         
         elif segment['type'] == 'steady':
-            power = int(segment['power'] * ftp)
-            target_low = power
-            target_high = power  # Same power for steady state
+            # For steady state, use single power value with correct FIT encoding
+            target_low, target_high = calculate_fit_targets(segment['power'])
             intensity = 0  # active
             step_name = f"Steady {segment['power']*100:.0f}%"
         
         elif segment['type'] == 'interval_work':
-            power = int(segment['power'] * ftp)
-            target_low = power
-            target_high = power  # Same power for work intervals
+            # For work intervals, use single power value with correct FIT encoding
+            target_low, target_high = calculate_fit_targets(segment['power'])
             intensity = 0  # active
             step_name = f"Work {segment['power']*100:.0f}%"
         
         elif segment['type'] == 'interval_rest':
-            power = int(segment['power'] * ftp)
-            target_low = power
-            target_high = power  # Same power for rest intervals
+            # For rest intervals, use single power value with correct FIT encoding
+            target_low, target_high = calculate_fit_targets(segment['power'])
             intensity = 1  # rest
             step_name = f"Rest {segment['power']*100:.0f}%"
         
         else:
-            # Default case
-            power = int(0.5 * ftp)
-            target_low = power
-            target_high = power
+            # Default case - use 50% FTP with correct FIT encoding
+            target_low, target_high = calculate_fit_targets(0.5)
             intensity = 0
             step_name = f"Step {i+1}"
         
@@ -392,10 +390,10 @@ def batch_convert_zwo_to_fit(input_directory: str, output_directory: str = None,
 # Example usage
 if __name__ == "__main__":
     # Convert single file (modify these paths for your files)
-    convert_zwo_to_fit("pacing1.zwo", "pacing1.fit", ftp=280)
+    # convert_zwo_to_fit("pacing1.zwo", "pacing1.fit", ftp=280)
     
     # Batch convert all files in current directory
-    # batch_convert_zwo_to_fit(".", ftp=250)
+    batch_convert_zwo_to_fit(".", ftp=280)
     
     # Batch convert with specific input/output directories
     # batch_convert_zwo_to_fit("./zwo_files", "./fit_files", ftp=275)
