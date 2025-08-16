@@ -13,7 +13,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from fit_writer import FITFileWriter
+from fit_writer import FITFileWriter, calculate_ftp_targets
 
 
 class TestFITFileWriter:
@@ -722,6 +722,175 @@ class TestCreateWorkoutFile:
         workout_record = writer.data_records[1]
         workout_name = workout_record['fields'][0][2].decode('utf-8').rstrip('\x00')
         assert "New Workout" == workout_name
+
+
+class TestCalculateFTPTargets:
+    """Test the calculate_ftp_targets function"""
+    
+    def test_single_power_value_basic(self):
+        """Test single power value calculation with basic values"""
+        # Test 50% FTP with 280W FTP (from reverse-engineering examples)
+        target_low, target_high = calculate_ftp_targets(0.5, ftp=280)
+        
+        # Expected values from reverse-engineering
+        assert target_low == 1126
+        assert target_high == 1154
+    
+    def test_single_power_value_different_ftp(self):
+        """Test single power value with different FTP"""
+        # Test 50% FTP with 250W FTP
+        target_low, target_high = calculate_ftp_targets(0.5, ftp=250)
+        
+        # Expected values: midpoint=1125, half_range=12
+        assert target_low == 1113
+        assert target_high == 1137
+    
+    def test_single_power_value_100_percent(self):
+        """Test 100% FTP calculation"""
+        target_low, target_high = calculate_ftp_targets(1.0, ftp=250)
+        
+        # midpoint = 1000 + 250 * 1.0 = 1250
+        # half_range = int(0.2 * 250 * 1.0 / 2) = int(25) = 25
+        # target_low = 1250 - 25 = 1225
+        # target_high = 1250 + 25 = 1275
+        assert target_low == 1225
+        assert target_high == 1275
+    
+    def test_single_power_value_high_intensity(self):
+        """Test high intensity power calculation"""
+        target_low, target_high = calculate_ftp_targets(1.4, ftp=280)  # 140% FTP
+        
+        # midpoint = 1000 + 280 * 1.4 = 1392
+        # half_range = int(0.2 * 280 * 1.4 / 2) = int(39.2) = 39
+        # target_low = 1392 - 39 = 1353
+        # target_high = 1392 + 39 = 1431
+        assert target_low == 1353
+        assert target_high == 1431
+    
+    def test_power_range_warmup(self):
+        """Test power range calculation for warmup"""
+        # Test 50-75% FTP range with 280W FTP
+        target_low, target_high = calculate_ftp_targets(0.5, ftp=280, power_high_fraction=0.75)
+        
+        # Low end: midpoint = 1000 + 280 * 0.5 = 1140, half_range = 14, target_low = 1126
+        # High end: midpoint = 1000 + 280 * 0.75 = 1210, half_range = 21, target_high = 1231
+        assert target_low == 1126
+        assert target_high == 1231
+    
+    def test_power_range_cooldown(self):
+        """Test power range calculation for cooldown"""
+        # Test 70-40% FTP range (cooldown typically goes from high to low)
+        target_low, target_high = calculate_ftp_targets(0.4, ftp=250, power_high_fraction=0.7)
+        
+        # Low end: midpoint = 1000 + 250 * 0.4 = 1100, half_range = 10, target_low = 1090
+        # High end: midpoint = 1000 + 250 * 0.7 = 1175, half_range = 17, target_high = 1192
+        assert target_low == 1090
+        assert target_high == 1192
+    
+    def test_zero_power(self):
+        """Test with zero power fraction"""
+        target_low, target_high = calculate_ftp_targets(0.0, ftp=250)
+        
+        # midpoint = 1000 + 250 * 0.0 = 1000
+        # half_range = int(0.2 * 250 * 0.0 / 2) = 0
+        # target_low = 1000 - 0 = 1000
+        # target_high = 1000 + 0 = 1000
+        assert target_low == 1000
+        assert target_high == 1000
+    
+    def test_low_ftp(self):
+        """Test with low FTP value"""
+        target_low, target_high = calculate_ftp_targets(0.8, ftp=150)
+        
+        # midpoint = 1000 + 150 * 0.8 = 1120
+        # half_range = int(0.2 * 150 * 0.8 / 2) = int(12) = 12
+        # target_low = 1120 - 12 = 1108
+        # target_high = 1120 + 12 = 1132
+        assert target_low == 1108
+        assert target_high == 1132
+    
+    def test_high_ftp(self):
+        """Test with high FTP value"""
+        target_low, target_high = calculate_ftp_targets(0.6, ftp=400)
+        
+        # midpoint = 1000 + 400 * 0.6 = 1240
+        # half_range = int(0.2 * 400 * 0.6 / 2) = int(24) = 24
+        # target_low = 1240 - 24 = 1216
+        # target_high = 1240 + 24 = 1264
+        assert target_low == 1216
+        assert target_high == 1264
+    
+    def test_power_range_same_values(self):
+        """Test power range where low and high fractions are the same"""
+        # Should behave same as single power value
+        target_low1, target_high1 = calculate_ftp_targets(0.6, ftp=280)
+        target_low2, target_high2 = calculate_ftp_targets(0.6, ftp=280, power_high_fraction=0.6)
+        
+        assert target_low1 == target_low2
+        assert target_high1 == target_high2
+    
+    def test_power_range_inverted(self):
+        """Test power range where high fraction is lower than low fraction"""
+        # This tests the math works even if the user provides inverted values
+        target_low, target_high = calculate_ftp_targets(0.8, ftp=250, power_high_fraction=0.6)
+        
+        # Low end: midpoint = 1000 + 250 * 0.8 = 1200, half_range = 20, target_low = 1180
+        # High end: midpoint = 1000 + 250 * 0.6 = 1150, half_range = 15, target_high = 1165
+        assert target_low == 1180
+        assert target_high == 1165
+        # Note: target_low > target_high in this case, which is mathematically correct
+    
+    def test_fractional_calculations(self):
+        """Test that fractional calculations are handled correctly"""
+        # Use values that would result in fractional half_range
+        target_low, target_high = calculate_ftp_targets(0.33, ftp=250)
+        
+        # midpoint = 1000 + 250 * 0.33 = 1082.5
+        # half_range = int(0.2 * 250 * 0.33 / 2) = int(8.25) = 8
+        # target_low = int(1082.5 - 8) = 1074
+        # target_high = int(1082.5 + 8) = 1090
+        assert target_low == 1074
+        assert target_high == 1090
+    
+    def test_return_types(self):
+        """Test that function returns integers"""
+        target_low, target_high = calculate_ftp_targets(0.75, ftp=280)
+        
+        assert isinstance(target_low, int)
+        assert isinstance(target_high, int)
+    
+    def test_default_power_high_fraction(self):
+        """Test that power_high_fraction defaults to power_low_fraction when None"""
+        # These should be equivalent
+        target1 = calculate_ftp_targets(0.7, ftp=280)
+        target2 = calculate_ftp_targets(0.7, ftp=280, power_high_fraction=None)
+        target3 = calculate_ftp_targets(0.7, ftp=280, power_high_fraction=0.7)
+        
+        assert target1 == target2 == target3
+    
+    def test_real_world_examples(self):
+        """Test with real-world examples from typical workout segments"""
+        
+        # Warmup: 44-75% (from example workout)
+        target_low, target_high = calculate_ftp_targets(0.44, ftp=280, power_high_fraction=0.75)
+        assert isinstance(target_low, int)
+        assert isinstance(target_high, int)
+        assert target_low < target_high
+        
+        # Steady state: 109% (from example workout)
+        target_low, target_high = calculate_ftp_targets(1.09, ftp=280)
+        assert isinstance(target_low, int)
+        assert isinstance(target_high, int)
+        
+        # Recovery: 30% (from example workout)
+        target_low, target_high = calculate_ftp_targets(0.30, ftp=280)
+        assert isinstance(target_low, int)
+        assert isinstance(target_high, int)
+        
+        # Work interval: 140% (from example workout)
+        target_low, target_high = calculate_ftp_targets(1.40, ftp=280)
+        assert isinstance(target_low, int)
+        assert isinstance(target_high, int)
 
 
 if __name__ == '__main__':
