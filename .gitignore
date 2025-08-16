@@ -12,3 +12,4 @@ wheels/
 
 *.fit
 *.zwo
+!tests/*.zwo

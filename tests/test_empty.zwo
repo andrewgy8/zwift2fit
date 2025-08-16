@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workout_file>
+    <name>Empty Workout</name>
+    <description>Workout with no segments</description>
+    <workout>
+    </workout>
+</workout_file>

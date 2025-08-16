@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workout_file>
+    <name>Minimal Workout</name>
+    <workout>
+        <SteadyState Duration="1800" Power="0.65"/>
+    </workout>
+</workout_file>
