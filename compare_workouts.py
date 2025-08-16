@@ -3,7 +3,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from zwift2fit import parse_zwo_file
-from fitfile_viewer import FITWorkoutVisualizer
+from fitfile_viewer import GarminFITWorkoutVisualizer
 import argparse
 import os
 
@@ -95,7 +95,7 @@ class WorkoutComparator:
         zwo_segments = zwo_workout['segments']
         
         print(f"Parsing FIT file: {fit_path}")
-        fit_visualizer = FITWorkoutVisualizer(ftp=self.ftp)
+        fit_visualizer = GarminFITWorkoutVisualizer(ftp=self.ftp)
         fit_workout = fit_visualizer.parse_fit_workout(fit_path)
         fit_segments = fit_workout['segments']
         

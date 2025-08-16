@@ -29,9 +29,6 @@ def calculate_ftp_targets(power_low_fraction, ftp, power_high_fraction=None):
         calculate_fit_targets(0.5, 0.75, ftp=280)  -> (1126, 1231)  # 50-75% range
     """
     
-    if ftp is None:
-        raise ValueError("FTP must be provided to calculate FIT target values")
-    
     if power_high_fraction is None:
         power_high_fraction = power_low_fraction
     

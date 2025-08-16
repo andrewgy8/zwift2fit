@@ -4,7 +4,7 @@ import datetime
 import os
 import glob
 from typing import List, Dict, Any
-from fit_target_utils import calculate_fit_targets
+from fit_target_utils import calculate_ftp_targets
 
 class FITFileWriter:
     """Improved FIT file writer for workout files"""
@@ -288,41 +288,41 @@ def create_fit_file(segments: List[Dict], output_path: str, workout_name: str = 
         # Determine target power and intensity using reverse-engineered formula
         if segment['type'] == 'warmup':
             # For warmup, use power range with correct FIT encoding
-            target_low, target_high = calculate_fit_targets(
-                segment['power_start'], segment['power_end']
+            target_low, target_high = calculate_ftp_targets(
+                segment['power_start'], ftp=ftp, power_high_fraction=segment['power_end']
             )
             intensity = 2  # warmup
             step_name = f"Warmup {segment['power_start']*100:.0f}-{segment['power_end']*100:.0f}%"
         
         elif segment['type'] == 'cooldown':
             # For cooldown, use power range with correct FIT encoding
-            target_low, target_high = calculate_fit_targets(
-                segment['power_start'], segment['power_end']
+            target_low, target_high = calculate_ftp_targets(
+                segment['power_start'], ftp=ftp, power_high_fraction=segment['power_end']
             )
             intensity = 3  # cooldown
             step_name = f"Cooldown {segment['power_start']*100:.0f}-{segment['power_end']*100:.0f}%"
         
         elif segment['type'] == 'steady':
             # For steady state, use single power value with correct FIT encoding
-            target_low, target_high = calculate_fit_targets(segment['power'])
+            target_low, target_high = calculate_ftp_targets(segment['power'], ftp=ftp)
             intensity = 0  # active
             step_name = f"Steady {segment['power']*100:.0f}%"
         
         elif segment['type'] == 'interval_work':
             # For work intervals, use single power value with correct FIT encoding
-            target_low, target_high = calculate_fit_targets(segment['power'])
+            target_low, target_high = calculate_ftp_targets(segment['power'], ftp=ftp)
             intensity = 0  # active
             step_name = f"Work {segment['power']*100:.0f}%"
         
         elif segment['type'] == 'interval_rest':
             # For rest intervals, use single power value with correct FIT encoding
-            target_low, target_high = calculate_fit_targets(segment['power'])
+            target_low, target_high = calculate_ftp_targets(segment['power'], ftp=ftp)
             intensity = 1  # rest
             step_name = f"Rest {segment['power']*100:.0f}%"
         
         else:
             # Default case - use 50% FTP with correct FIT encoding
-            target_low, target_high = calculate_fit_targets(0.5)
+            target_low, target_high = calculate_ftp_targets(0.5, ftp=ftp)
             intensity = 0
             step_name = f"Step {i+1}"
         
