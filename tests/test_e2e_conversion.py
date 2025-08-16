@@ -7,12 +7,8 @@ workflow from parsing ZWO files to writing valid FIT files.
 
 import pytest
 import struct
+import os
 from pathlib import Path
-
-# Add parent directory to path to import the modules
-import sys
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from zwo_parser import parse_zwo_to_workout
 from fit_writer import FITFileWriter
@@ -22,25 +18,12 @@ from zwift2fit import convert_zwo_to_fit, create_fit_file
 class TestEndToEndConversion:
     """Test complete ZWO to FIT conversion workflow"""
 
-    def test_simple_workout_conversion(self, tmp_path):
-        """Test conversion of a simple workout with basic segments"""
-        # Create a simple ZWO file
-        zwo_content = """<?xml version="1.0" encoding="UTF-8"?>
-<workout_file>
-    <name>Simple Test Workout</name>
-    <workout>
-        <Warmup Duration="300" PowerLow="0.5" PowerHigh="0.75"/>
-        <SteadyState Duration="600" Power="0.8"/>
-        <Cooldown Duration="300" PowerHigh="0.6" PowerLow="0.4"/>
-    </workout>
-</workout_file>"""
-
-        zwo_path = tmp_path / "simple_workout.zwo"
-        fit_path = tmp_path / "simple_workout.fit"
-
-        # Write ZWO file
-        with open(zwo_path, "w", encoding="utf-8") as f:
-            f.write(zwo_content)
+    def test_basic_workout_conversion(self, tmp_path):
+        """Test conversion of basic workout using test_basic.zwo fixture"""
+        # Use existing test_basic.zwo fixture
+        test_dir = Path(__file__).parent
+        zwo_path = test_dir / "test_basic.zwo"
+        fit_path = tmp_path / "basic_workout.fit"
 
         # Convert to FIT
         result = convert_zwo_to_fit(str(zwo_path), str(fit_path), ftp=250)
@@ -64,7 +47,7 @@ class TestEndToEndConversion:
 
         # Verify original workout was parsed correctly
         workout = parse_zwo_to_workout(str(zwo_path))
-        assert workout.name == "Simple Test Workout"
+        assert workout.name == "Basic Test Workout"
         assert len(workout.segments) == 3
 
         # Check segments
@@ -73,25 +56,14 @@ class TestEndToEndConversion:
         assert workout.segments[1].type == "steady"
         assert workout.segments[1].duration == 600
         assert workout.segments[2].type == "cooldown"
-        assert workout.segments[2].duration == 300
+        assert workout.segments[2].duration == 180
 
     def test_interval_workout_conversion(self, tmp_path):
-        """Test conversion of workout with intervals"""
-        zwo_content = """<?xml version="1.0" encoding="UTF-8"?>
-<workout_file>
-    <name>Interval Training</name>
-    <workout>
-        <Warmup Duration="600" PowerLow="0.5" PowerHigh="0.75"/>
-        <IntervalsT Repeat="3" OnDuration="240" OffDuration="120" OnPower="1.2" OffPower="0.5"/>
-        <Cooldown Duration="600" PowerHigh="0.7" PowerLow="0.4"/>
-    </workout>
-</workout_file>"""
-
-        zwo_path = tmp_path / "interval_workout.zwo"
+        """Test conversion of workout with intervals using test_intervals.zwo fixture"""
+        # Use existing test_intervals.zwo fixture
+        test_dir = Path(__file__).parent
+        zwo_path = test_dir / "test_intervals.zwo"
         fit_path = tmp_path / "interval_workout.fit"
-
-        with open(zwo_path, "w", encoding="utf-8") as f:
-            f.write(zwo_content)
 
         # Convert with custom FTP
         result = convert_zwo_to_fit(str(zwo_path), str(fit_path), ftp=300)
@@ -101,38 +73,24 @@ class TestEndToEndConversion:
 
         # Verify the workout structure
         workout = parse_zwo_to_workout(str(zwo_path))
-        assert workout.name == "Interval Training"
-        # Should have warmup + 3 work intervals + 3 rest intervals + cooldown = 8 segments
-        assert len(workout.segments) == 8
+        assert workout.name == "Interval Test Workout"
+        # warmup + 3*2 intervals + steady + 5*2 intervals + cooldown = 1 + 6 + 1 + 10 + 1 = 19
+        assert len(workout.segments) == 19
 
         # Check interval pattern
         assert workout.segments[0].type == "warmup"
         assert workout.segments[1].type == "interval_work"
         assert workout.segments[1].power == 1.2
         assert workout.segments[2].type == "interval_rest"
-        assert workout.segments[2].power == 0.5
+        assert workout.segments[2].power == 0.4
         assert workout.segments[-1].type == "cooldown"
 
     def test_complex_workout_conversion(self, tmp_path):
-        """Test conversion of complex workout with multiple segment types"""
-        zwo_content = """<?xml version="1.0" encoding="UTF-8"?>
-<workout_file>
-    <name>Complex Training Session</name>
-    <workout>
-        <Warmup Duration="600" PowerLow="0.4" PowerHigh="0.7"/>
-        <SteadyState Duration="300" Power="0.6"/>
-        <IntervalsT Repeat="2" OnDuration="180" OffDuration="60" OnPower="1.4" OffPower="0.3"/>
-        <SteadyState Duration="240" Power="0.85"/>
-        <IntervalsT Repeat="1" OnDuration="300" OffDuration="180" OnPower="1.1" OffPower="0.4"/>
-        <Cooldown Duration="600" PowerHigh="0.6" PowerLow="0.3"/>
-    </workout>
-</workout_file>"""
-
-        zwo_path = tmp_path / "complex_workout.zwo"
+        """Test conversion of complex workout using max-oclock.zwo fixture"""
+        # Use existing 1-max-oclock.zwo fixture which has multiple interval blocks
+        project_root = Path(__file__).parent.parent
+        zwo_path = project_root / "1-max-oclock.zwo"
         fit_path = tmp_path / "complex_workout.fit"
-
-        with open(zwo_path, "w", encoding="utf-8") as f:
-            f.write(zwo_content)
 
         result = convert_zwo_to_fit(str(zwo_path), str(fit_path), ftp=280)
 
@@ -141,32 +99,23 @@ class TestEndToEndConversion:
 
         # Verify complex structure
         workout = parse_zwo_to_workout(str(zwo_path))
-        assert workout.name == "Complex Training Session"
+        assert workout.name == "1 Max Oclock"
 
-        # Count expected segments:
-        # Warmup(1) + Steady(1) + Intervals(2x2=4) + Steady(1) + Intervals(1x2=2) + Cooldown(1) = 10
-        expected_segments = 10
+        # This workout has many segments: warmup + steady states + 3 interval blocks
+        # warmup(1) + steady(4) + intervals(8*2=16) + steady(1) + intervals(8*2=16) + steady(1) + intervals(8*2=16) + steady(1) = 56
+        expected_segments = 56
         assert len(workout.segments) == expected_segments
 
         # Verify file size is appropriate for complex workout
         file_size = fit_path.stat().st_size
-        assert file_size > 300  # Should be substantial for 10 segments
+        assert file_size > 500  # Should be substantial for many segments
 
     def test_minimal_workout_conversion(self, tmp_path):
-        """Test conversion of minimal workout with single segment"""
-        zwo_content = """<?xml version="1.0" encoding="UTF-8"?>
-<workout_file>
-    <name>Minimal</name>
-    <workout>
-        <SteadyState Duration="1200" Power="0.75"/>
-    </workout>
-</workout_file>"""
-
-        zwo_path = tmp_path / "minimal_workout.zwo"
+        """Test conversion of minimal workout using test_minimal.zwo fixture"""
+        # Use existing test_minimal.zwo fixture
+        test_dir = Path(__file__).parent
+        zwo_path = test_dir / "test_minimal.zwo"
         fit_path = tmp_path / "minimal_workout.fit"
-
-        with open(zwo_path, "w", encoding="utf-8") as f:
-            f.write(zwo_content)
 
         result = convert_zwo_to_fit(str(zwo_path), str(fit_path))
 
@@ -176,25 +125,15 @@ class TestEndToEndConversion:
         workout = parse_zwo_to_workout(str(zwo_path))
         assert len(workout.segments) == 1
         assert workout.segments[0].type == "steady"
-        assert workout.segments[0].duration == 1200
-        assert workout.segments[0].power == 0.75
+        assert workout.segments[0].duration == 1800
+        assert workout.segments[0].power == 0.65
 
     def test_fit_file_structure_validation(self, tmp_path):
         """Test that generated FIT file has correct internal structure"""
-        zwo_content = """<?xml version="1.0" encoding="UTF-8"?>
-<workout_file>
-    <name>Structure Test</name>
-    <workout>
-        <Warmup Duration="300" PowerLow="0.5" PowerHigh="0.75"/>
-        <SteadyState Duration="600" Power="0.8"/>
-    </workout>
-</workout_file>"""
-
-        zwo_path = tmp_path / "structure_test.zwo"
+        # Use existing test_basic.zwo fixture
+        test_dir = Path(__file__).parent
+        zwo_path = test_dir / "test_basic.zwo"
         fit_path = tmp_path / "structure_test.fit"
-
-        with open(zwo_path, "w", encoding="utf-8") as f:
-            f.write(zwo_content)
 
         convert_zwo_to_fit(str(zwo_path), str(fit_path), ftp=250)
 
@@ -227,20 +166,11 @@ class TestEndToEndConversion:
 
     def test_different_ftp_values(self, tmp_path):
         """Test conversion with different FTP values produces different results"""
-        zwo_content = """<?xml version="1.0" encoding="UTF-8"?>
-<workout_file>
-    <name>FTP Test</name>
-    <workout>
-        <SteadyState Duration="600" Power="1.0"/>
-    </workout>
-</workout_file>"""
-
-        zwo_path = tmp_path / "ftp_test.zwo"
+        # Use existing test_minimal.zwo fixture
+        test_dir = Path(__file__).parent
+        zwo_path = test_dir / "test_minimal.zwo"
         fit_path_250 = tmp_path / "ftp_250.fit"
         fit_path_300 = tmp_path / "ftp_300.fit"
-
-        with open(zwo_path, "w", encoding="utf-8") as f:
-            f.write(zwo_content)
 
         # Convert with different FTP values
         convert_zwo_to_fit(str(zwo_path), str(fit_path_250), ftp=250)
@@ -317,19 +247,11 @@ class TestErrorHandling:
         assert not fit_path.exists()
 
     def test_empty_workout(self, tmp_path):
-        """Test handling of workout with no segments"""
-        zwo_content = """<?xml version="1.0" encoding="UTF-8"?>
-<workout_file>
-    <name>Empty Workout</name>
-    <workout>
-    </workout>
-</workout_file>"""
-
-        zwo_path = tmp_path / "empty_workout.zwo"
+        """Test handling of workout with no segments using test_empty.zwo fixture"""
+        # Use existing test_empty.zwo fixture
+        test_dir = Path(__file__).parent
+        zwo_path = test_dir / "test_empty.zwo"
         fit_path = tmp_path / "empty_workout.fit"
-
-        with open(zwo_path, "w", encoding="utf-8") as f:
-            f.write(zwo_content)
 
         result = convert_zwo_to_fit(str(zwo_path), str(fit_path))
 
@@ -363,21 +285,10 @@ class TestDirectAPIUsage:
 
     def test_direct_fit_writer_usage(self, tmp_path):
         """Test using FITFileWriter directly with parsed segments"""
-        zwo_content = """<?xml version="1.0" encoding="UTF-8"?>
-<workout_file>
-    <name>Direct API Test</name>
-    <workout>
-        <Warmup Duration="300" PowerLow="0.5" PowerHigh="0.75"/>
-        <SteadyState Duration="600" Power="0.8"/>
-        <Cooldown Duration="300" PowerHigh="0.6" PowerLow="0.4"/>
-    </workout>
-</workout_file>"""
-
-        zwo_path = tmp_path / "direct_api_test.zwo"
+        # Use existing test_basic.zwo fixture
+        test_dir = Path(__file__).parent
+        zwo_path = test_dir / "test_basic.zwo"
         fit_path = tmp_path / "direct_api_test.fit"
-
-        with open(zwo_path, "w", encoding="utf-8") as f:
-            f.write(zwo_content)
 
         # Parse ZWO file
         workout = parse_zwo_to_workout(str(zwo_path))
@@ -408,20 +319,13 @@ class TestDirectAPIUsage:
         """Test using same FIT writer instance for multiple conversions"""
         writer = FITFileWriter()
 
-        for i in range(3):
-            zwo_content = f'''<?xml version="1.0" encoding="UTF-8"?>
-<workout_file>
-    <name>Workout {i + 1}</name>
-    <workout>
-        <SteadyState Duration="{300 * (i + 1)}" Power="{0.7 + i * 0.1}"/>
-    </workout>
-</workout_file>'''
-
-            zwo_path = tmp_path / f"workout_{i}.zwo"
+        # Use different existing fixtures for multiple conversions
+        test_dir = Path(__file__).parent
+        fixtures = ["test_basic.zwo", "test_minimal.zwo", "test_intervals.zwo"]
+        
+        for i, fixture_name in enumerate(fixtures):
+            zwo_path = test_dir / fixture_name
             fit_path = tmp_path / f"workout_{i}.fit"
-
-            with open(zwo_path, "w", encoding="utf-8") as f:
-                f.write(zwo_content)
 
             # Parse and convert
             workout = parse_zwo_to_workout(str(zwo_path))
@@ -440,34 +344,29 @@ class TestDirectAPIUsage:
 class TestIntegrationWithRealFiles:
     """Test integration with actual ZWO files if available"""
 
-    def test_existing_zwo_file_if_present(self, tmp_path):
-        """Test conversion of existing ZWO file if one exists in the project"""
-        # Look for existing ZWO files in the project
+    def test_real_world_zwo_file(self, tmp_path):
+        """Test conversion of real-world ZWO file using max-oclock fixture"""
+        # Use the real Zwift workout file
         project_root = Path(__file__).parent.parent
-        zwo_files = list(project_root.glob("*.zwo"))
-
-        if not zwo_files:
-            pytest.skip("No ZWO files found in project root")
-
-        # Test with the first ZWO file found
-        zwo_path = zwo_files[0]
-        fit_path = tmp_path / f"{zwo_path.stem}_test.fit"
+        zwo_path = project_root / "1-max-oclock.zwo"
+        fit_path = tmp_path / "max_oclock_test.fit"
 
         # Convert using the conversion function
         result = convert_zwo_to_fit(str(zwo_path), str(fit_path), ftp=280)
 
-        # If the file is valid, conversion should succeed
-        if result:
-            assert fit_path.exists()
+        # Should succeed with real workout
+        assert result is True
+        assert fit_path.exists()
 
-            # Verify the converted file has valid structure
-            with open(fit_path, "rb") as f:
-                header = f.read(14)
-                assert header[8:12] == b".FIT"
+        # Verify the converted file has valid structure
+        with open(fit_path, "rb") as f:
+            header = f.read(14)
+            assert header[8:12] == b".FIT"
 
-            # Verify the original file could be parsed
-            workout = parse_zwo_to_workout(str(zwo_path))
-            assert len(workout.segments) > 0
+        # Verify the original file could be parsed
+        workout = parse_zwo_to_workout(str(zwo_path))
+        assert len(workout.segments) > 0
+        assert workout.name == "1 Max Oclock"
 
 
 if __name__ == "__main__":
