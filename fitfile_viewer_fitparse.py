@@ -1,8 +1,3 @@
-"""
-FIT workout visualizer using official Garmin FIT Python SDK
-Updated to use garmin-fit-sdk instead of fitparse for better compatibility and official support
-"""
-
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
@@ -10,15 +5,14 @@ import argparse
 import os
 
 try:
-    from garmin_fit_sdk import Decoder, Stream
-    GARMIN_SDK_AVAILABLE = True
+    from fitparse import FitFile
+    FITPARSE_AVAILABLE = True
 except ImportError:
-    GARMIN_SDK_AVAILABLE = False
-    print("Warning: garmin-fit-sdk not installed. Install with: pip install garmin-fit-sdk")
+    FITPARSE_AVAILABLE = False
+    print("Warning: fitparse not installed. Install with: pip install fitparse")
 
-
-class GarminFITWorkoutVisualizer:
-    """Visualize FIT workout files using official Garmin SDK with power profiles and step analysis"""
+class FITWorkoutVisualizer:
+    """Visualize FIT workout files with power profiles and step analysis"""
     
     def __init__(self, ftp: int = 250):
         self.ftp = ftp
@@ -28,135 +22,107 @@ class GarminFITWorkoutVisualizer:
             2: '#45B7D1',    # Warmup - Blue
             3: '#96CEB4',    # Cooldown - Green
             4: '#FFEAA7',    # Recovery - Yellow
-            'active': '#FF6B6B',    # Active - Red
-            'rest': '#4ECDC4',      # Rest - Teal
-            'warmup': '#45B7D1',    # Warmup - Blue
-            'cooldown': '#96CEB4',  # Cooldown - Green
-            'recovery': '#FFEAA7'   # Recovery - Yellow
         }
         self.intensity_names = {
             0: 'Active',
             1: 'Rest', 
             2: 'Warmup',
             3: 'Cooldown',
-            4: 'Recovery',
-            'active': 'Active',
-            'rest': 'Rest',
-            'warmup': 'Warmup',
-            'cooldown': 'Cooldown',
-            'recovery': 'Recovery'
+            4: 'Recovery'
         }
     
     def parse_fit_workout(self, fit_path: str) -> Dict[str, Any]:
-        """Parse FIT workout file using Garmin SDK and extract workout information"""
-        if not GARMIN_SDK_AVAILABLE:
-            raise ImportError("garmin-fit-sdk library is required. Install with: pip install garmin-fit-sdk")
+        """Parse FIT workout file and extract workout information"""
+        if not FITPARSE_AVAILABLE:
+            raise ImportError("fitparse library is required. Install with: pip install fitparse")
         
         try:
-            # Create stream and decoder
-            stream = Stream.from_file(fit_path)
-            decoder = Decoder(stream)
-            
-            # Read all messages
-            messages, errors = decoder.read()
-            
-            # Handle any errors
-            if errors:
-                print(f"Decoder errors: {errors}")
+            fitfile = FitFile(fit_path)
             
             workout_info = {
                 'name': 'FIT Workout',
                 'sport': 'cycling',
                 'steps': [],
                 'total_duration': 0,
-                'source_file': os.path.basename(fit_path),
-                'file_id': None,
-                'capabilities': None
+                'source_file': os.path.basename(fit_path)
             }
             
-            # Process messages by type
-            # Note: Garmin SDK returns messages with plural names (e.g., 'workout_mesgs')
-            for message_type, message_list in messages.items():
-                if message_type == 'workout_mesgs':
-                    for msg in message_list:
-                        # Messages are dicts, not objects with attributes
-                        if 'wkt_name' in msg and msg['wkt_name']:
-                            workout_info['name'] = msg['wkt_name']
-                        if 'sport' in msg:
-                            workout_info['sport'] = msg['sport']
-                        if 'capabilities' in msg:
-                            workout_info['capabilities'] = msg['capabilities']
-                        if 'num_valid_steps' in msg:
-                            expected_steps = msg['num_valid_steps']
-                            print(f"Expected workout steps: {expected_steps}")
+            # Parse workout messages
+            for record in fitfile.get_messages(['workout', 'workout_step']):
+                if record.name == 'workout':
+                    for field in record.fields:
+                        if field.name == 'wkt_name' and field.value:
+                            workout_info['name'] = field.value.decode('utf-8') if isinstance(field.value, bytes) else str(field.value)
+                        elif field.name == 'sport':
+                            workout_info['sport'] = field.value
                 
-                elif message_type == 'workout_step_mesgs':
-                    for msg in message_list:
-                        step_info = {
-                            'step_index': msg.get('message_index'),
-                            'step_name': msg.get('wkt_step_name'),
-                            'duration_type': msg.get('duration_type'),
-                            'duration_value': msg.get('duration_time'),  # Note: duration_time for time-based
-                            'target_type': msg.get('target_type'),
-                            'target_value': msg.get('target_value'),
-                            'custom_target_low': msg.get('custom_target_power_low'),
-                            'custom_target_high': msg.get('custom_target_power_high'),
-                            'intensity': msg.get('intensity', 0),
-                            'target_power_zone': msg.get('target_power_zone')
-                        }
-                        
-                        # Clean up string values
-                        if step_info['step_name'] and isinstance(step_info['step_name'], str):
-                            step_info['step_name'] = step_info['step_name'].strip('\x00')
-                        
-                        workout_info['steps'].append(step_info)
-                
-                elif message_type == 'file_id_mesgs':
-                    for msg in message_list:
-                        workout_info['file_id'] = {
-                            'type': msg.get('type'),
-                            'manufacturer': msg.get('manufacturer'),
-                            'product': msg.get('product'),
-                            'serial_number': msg.get('serial_number'),
-                            'time_created': msg.get('time_created'),
-                        }
+                elif record.name == 'workout_step':
+                    step_info = {
+                        'step_index': None,
+                        'step_name': None,
+                        'duration_type': None,
+                        'duration_value': None,
+                        'target_type': None,
+                        'target_value': None,
+                        'custom_target_low': None,
+                        'custom_target_high': None,
+                        'intensity': 0
+                    }
+                    
+                    for field in record.fields:
+                        if field.name == 'message_index':
+                            step_info['step_index'] = field.value
+                        elif field.name == 'wkt_step_name' and field.value:
+                            name = field.value.decode('utf-8') if isinstance(field.value, bytes) else str(field.value)
+                            step_info['step_name'] = name
+                        elif field.name == 'duration_type':
+                            step_info['duration_type'] = field.value
+                        elif field.name == 'duration_time':  # Correct field name
+                            step_info['duration_value'] = field.value
+                        elif field.name == 'target_type':
+                            step_info['target_type'] = field.value
+                        elif field.name == 'target_value':
+                            step_info['target_value'] = field.value
+                        elif field.name == 'custom_target_power_low':  # Correct field name
+                            step_info['custom_target_low'] = field.value
+                        elif field.name == 'custom_target_power_high':  # Correct field name
+                            step_info['custom_target_high'] = field.value
+                        elif field.name == 'intensity':
+                            step_info['intensity'] = field.value if field.value is not None else 0
+                    
+                    workout_info['steps'].append(step_info)
             
             # Sort steps by index and process
-            workout_info['steps'].sort(key=lambda x: x.get('step_index', 0) if x.get('step_index') is not None else 999)
+            workout_info['steps'].sort(key=lambda x: x.get('step_index', 0))
             
             # Calculate segments for visualization
             segments = []
             current_time = 0
             
             for i, step in enumerate(workout_info['steps']):
-                # Determine duration - use duration_time field which is already in seconds
+                # Determine duration
                 duration = 0
-                if step['duration_type'] == 'repeat_until_steps_cmplt':
-                    # Skip repeat markers - these don't represent actual workout segments
-                    continue
-                elif step.get('duration_time') is not None:
-                    # duration_time is already in seconds
-                    duration = step['duration_time']
-                elif step.get('duration_value') is not None:
-                    # duration_value is already in seconds for Garmin SDK
-                    duration = step['duration_value']
+                if step['duration_type'] == 'time' or step['duration_type'] == 0:  # Time-based
+                    duration = step['duration_value'] if step['duration_value'] else 60
+                elif step['duration_type'] == 'distance' or step['duration_type'] == 1:  # Distance-based
+                    duration = 300  # Default 5 minutes for distance-based steps
                 else:
-                    duration = 60  # Default 1 minute
-                
-                # Skip invalid duration steps
-                if duration <= 0:
-                    continue
+                    duration = 60  # Default 1 minute for unknown types
                 
                 # Determine power target
                 power_target = None
                 power_range = None
                 
-                # Check for custom power targets first (most specific)
-                if step['custom_target_low'] is not None and step['custom_target_high'] is not None:
-                    power_range = (step['custom_target_low'], step['custom_target_high'])
-                    power_target = (step['custom_target_low'] + step['custom_target_high']) / 2
-                elif step['target_value'] is not None:
-                    power_target = step['target_value']
+                if step['target_type'] == 'power' or step['target_type'] == 1:  # Power target
+                    if step['custom_target_low'] and step['custom_target_high']:
+                        # Power range - use values directly (no scaling needed)
+                        power_range = (step['custom_target_low'], step['custom_target_high'])
+                        power_target = (step['custom_target_low'] + step['custom_target_high']) / 2
+                    elif step['target_value']:
+                        power_target = step['target_value']
+                    else:
+                        # Default to moderate effort if no power target
+                        power_target = self.ftp * 0.7
                 else:
                     # Default to moderate effort if no power target
                     power_target = self.ftp * 0.7
@@ -169,9 +135,8 @@ class GarminFITWorkoutVisualizer:
                     'duration': duration,
                     'power_target': power_target,
                     'power_range': power_range,
-                    'intensity': step['intensity'] if step['intensity'] is not None else 0,
-                    'target_type': step['target_type'],
-                    'duration_type': step['duration_type']
+                    'intensity': step['intensity'],
+                    'target_type': step['target_type']
                 }
                 
                 segments.append(segment)
@@ -180,14 +145,10 @@ class GarminFITWorkoutVisualizer:
             workout_info['segments'] = segments
             workout_info['total_duration'] = current_time
             
-            print(f"Parsed {len(segments)} valid segments from {len(workout_info['steps'])} total steps")
-            
             return workout_info
             
         except Exception as e:
             print(f"Error parsing FIT file {fit_path}: {str(e)}")
-            import traceback
-            traceback.print_exc()
             return {
                 'name': 'Error',
                 'sport': 'cycling',
@@ -239,19 +200,11 @@ class GarminFITWorkoutVisualizer:
             return
         
         # Print workout summary
-        print(f"\n{workout_info['name']} (FIT - Garmin SDK)")
+        print(f"\n{workout_info['name']} (FIT)")
         total_duration = int(workout_info['total_duration'])
         print(f"Duration: {total_duration//60}:{total_duration%60:02d}")
         print(f"Steps: {len(workout_info['segments'])}")
         print(f"Source: {workout_info['source_file']}")
-        
-        # Print file ID info if available
-        if workout_info.get('file_id'):
-            file_id = workout_info['file_id']
-            print(f"File Type: {file_id.get('type', 'unknown')}")
-            print(f"Manufacturer: {file_id.get('manufacturer', 'unknown')}")
-            if file_id.get('time_created'):
-                print(f"Created: {file_id['time_created']}")
         
         if show_plot:
             # Create figure with power profile and step timeline
@@ -295,7 +248,7 @@ class GarminFITWorkoutVisualizer:
             
             # Format power chart
             ax_power.set_ylabel('Power (watts)', fontsize=12)
-            ax_power.set_title(f'{workout_info["name"]} - Power Profile (Garmin SDK)', 
+            ax_power.set_title(f'{workout_info["name"]} - Power Profile Over Time', 
                              fontsize=14, fontweight='bold')
             ax_power.grid(True, alpha=0.3)
             ax_power.legend()
@@ -355,7 +308,7 @@ class GarminFITWorkoutVisualizer:
         
         # Print detailed step information
         print("\nSTEP DETAILS:")
-        print("-" * 80)
+        print("-" * 60)
         
         for i, segment in enumerate(workout_info['segments']):
             intensity_name = self.intensity_names.get(segment['intensity'], 'Unknown')
@@ -369,75 +322,98 @@ class GarminFITWorkoutVisualizer:
             else:
                 power_str = "No target"
             
-            duration_type = segment.get('duration_type', 'time')
-            print(f"{i+1:2d}. {segment['name']:<20} | {duration_str} | {power_str:<12} | {intensity_name:<8} | {duration_type}")
+            print(f"{i+1:2d}. {segment['name']:<20} | {duration_str} | {power_str:<12} | {intensity_name}")
         
-        print("-" * 80)
+        print("-" * 60)
     
-    def debug_fit_messages(self, fit_path: str):
-        """Debug function to print all messages in a FIT file"""
-        if not GARMIN_SDK_AVAILABLE:
-            print("Garmin SDK not available")
+    def compare_zwo_and_fit(self, zwo_file: str, fit_file: str, zwo_visualizer=None, 
+                           save_path: str = None, show_plot: bool = True):
+        """Compare ZWO and FIT versions of the same workout"""
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 10))
+        
+        # Parse FIT file
+        fit_workout = self.parse_fit_workout(fit_file)
+        
+        # Parse ZWO file (need to import or pass ZWO visualizer)
+        if zwo_visualizer is None:
+            print("Warning: No ZWO visualizer provided for comparison")
             return
         
-        try:
-            stream = Stream.from_file(fit_path)
-            decoder = Decoder(stream)
-            messages, errors = decoder.read()
+        zwo_workout = zwo_visualizer.parse_zwo_file(zwo_file)
+        
+        # Plot FIT workout
+        if fit_workout['segments']:
+            time_data, power_data, range_info = self.create_power_profile(fit_workout['segments'])
+            ax1.plot(time_data / 60, power_data, 'b-', linewidth=2, label='FIT Workout', alpha=0.8)
             
-            print(f"=== DEBUG: {fit_path} ===")
-            print(f"Errors: {errors}")
-            print(f"Message types found: {list(messages.keys())}")
-            
-            for message_type, message_list in messages.items():
-                print(f"\n{message_type} ({len(message_list)} messages):")
-                for i, msg in enumerate(message_list):
-                    print(f"  Message {i}:")
-                    if isinstance(msg, dict):
-                        for key, value in msg.items():
-                            if value is not None:
-                                print(f"    {key}: {value}")
-                    else:
-                        # Fallback for non-dict messages
-                        for attr in dir(msg):
-                            if not attr.startswith('_') and not callable(getattr(msg, attr)):
-                                value = getattr(msg, attr)
-                                if value is not None:
-                                    print(f"    {attr}: {value}")
-            
-        except Exception as e:
-            print(f"Debug error: {e}")
-            import traceback
-            traceback.print_exc()
-
+            # Add power ranges
+            for range_data in range_info:
+                ax1.fill_between([range_data['start_time']/60, range_data['end_time']/60], 
+                               [range_data['low_power'], range_data['low_power']], 
+                               [range_data['high_power'], range_data['high_power']], 
+                               alpha=0.2, color='blue')
+        
+        # Plot ZWO workout
+        if zwo_workout['segments']:
+            time_data, power_data = zwo_visualizer.create_power_profile(zwo_workout['segments'])
+            power_watts = power_data * self.ftp
+            ax1.plot(time_data / 60, power_watts, 'r-', linewidth=2, label='ZWO Workout', alpha=0.8)
+        
+        ax1.set_xlabel('Time (minutes)', fontsize=12)
+        ax1.set_ylabel('Power (watts)', fontsize=12)
+        ax1.set_title('Workout Comparison: ZWO vs FIT', fontsize=14, fontweight='bold')
+        ax1.grid(True, alpha=0.3)
+        ax1.legend()
+        ax1.axhline(y=self.ftp, color='red', linestyle='--', alpha=0.7, label=f'FTP ({self.ftp}W)')
+        
+        # Comparison statistics
+        ax2.axis('off')
+        
+        fit_stats = f"""FIT WORKOUT:
+Name: {fit_workout['name']}
+Duration: {fit_workout['total_duration']//60}:{fit_workout['total_duration']%60:02d}
+Steps: {len(fit_workout['segments'])}
+Source: {fit_workout['source_file']}"""
+        
+        zwo_stats = f"""ZWO WORKOUT:
+Name: {zwo_workout['name']}
+Duration: {zwo_workout['total_duration']//60}:{zwo_workout['total_duration']%60:02d}
+Segments: {len(zwo_workout['segments'])}
+Source: {os.path.basename(zwo_file)}"""
+        
+        ax2.text(0.05, 0.95, fit_stats, transform=ax2.transAxes, 
+                fontsize=10, verticalalignment='top', fontfamily='monospace')
+        ax2.text(0.55, 0.95, zwo_stats, transform=ax2.transAxes, 
+                fontsize=10, verticalalignment='top', fontfamily='monospace')
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Workout comparison saved to: {save_path}")
+        
+        if show_plot:
+            plt.show()
+        
+        return fig
 
 def main():
-    if not GARMIN_SDK_AVAILABLE:
-        print("Error: garmin-fit-sdk library is required. Install with: pip install garmin-fit-sdk")
+    if not FITPARSE_AVAILABLE:
+        print("Error: fitparse library is required. Install with: pip install fitparse")
         return
     
-    parser = argparse.ArgumentParser(description='Visualize FIT workout files using Garmin SDK')
+    parser = argparse.ArgumentParser(description='Visualize FIT workout files')
     parser.add_argument('files', nargs='+', help='FIT file(s) to visualize')
     parser.add_argument('--ftp', type=int, default=250, help='Functional Threshold Power in watts (default: 250)')
     parser.add_argument('--output', '-o', help='Save visualization to file (PNG/PDF)')
     parser.add_argument('--no-show', action='store_true', help='Don\'t display the plot')
-    parser.add_argument('--debug', action='store_true', help='Print debug information about FIT messages')
     
     args = parser.parse_args()
     
-    visualizer = GarminFITWorkoutVisualizer(ftp=args.ftp)
+    visualizer = FITWorkoutVisualizer(ftp=args.ftp)
     
     for fit_file in args.files:
-        if not os.path.exists(fit_file):
-            print(f"File not found: {fit_file}")
-            continue
-            
-        print(f"Analyzing: {fit_file}")
-        
-        if args.debug:
-            visualizer.debug_fit_messages(fit_file)
-            continue
-        
+        print(f"Visualizing: {fit_file}")
         workout_info = visualizer.parse_fit_workout(fit_file)
         
         if workout_info['segments']:
@@ -451,12 +427,9 @@ def main():
         else:
             print(f"No valid segments found in {fit_file}")
 
-
 if __name__ == "__main__":
     main()
 
-
 # Example usage:
-# python fitfile_viewer_garmin.py workout.fit --ftp 275
-# python fitfile_viewer_garmin.py converted_workout.fit --output fit_viz.png --debug
-# python fitfile_viewer_garmin.py pacing1.fit --debug
+# python fit_visualizer.py workout.fit --ftp 275
+# python fit_visualizer.py converted_workout.fit --output fit_viz.png
