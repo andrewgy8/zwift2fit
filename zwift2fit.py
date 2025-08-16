@@ -1,10 +1,11 @@
-import xml.etree.ElementTree as ET
 import struct
 import datetime
 import os
 import glob
 from typing import List, Dict, Any
+from zwo_parser import WorkoutSegment
 from fit_target_utils import calculate_ftp_targets
+from zwo_parser import parse_zwo_to_workout
 
 class FITFileWriter:
     """Improved FIT file writer for workout files"""
@@ -191,78 +192,9 @@ class FITFileWriter:
         
         return crc & 0xFFFF
 
-def parse_zwo_file(zwo_path: str) -> Dict[str, Any]:
-    """Parse ZWO file and extract workout information"""
-    tree = ET.parse(zwo_path)
-    root = tree.getroot()
-    
-    workout_info = {
-        'name': root.find('name').text if root.find('name') is not None else 'Workout',
-        'description': root.find('description').text if root.find('description') is not None else '',
-        'segments': []
-    }
-    
-    workout_element = root.find('workout')
-    if workout_element is None:
-        return workout_info
-    
-    for element in workout_element:
-        if element.tag == 'Warmup':
-            duration = int(element.get('Duration', 0))
-            power_low = float(element.get('PowerLow', 0.5))
-            power_high = float(element.get('PowerHigh', 0.75))
-            workout_info['segments'].append({
-                'type': 'warmup',
-                'duration': duration,
-                'power_start': power_low,
-                'power_end': power_high
-            })
-        
-        elif element.tag == 'SteadyState':
-            duration = int(element.get('Duration', 0))
-            power = float(element.get('Power', 0.5))
-            workout_info['segments'].append({
-                'type': 'steady',
-                'duration': duration,
-                'power': power
-            })
-        
-        elif element.tag == 'Cooldown':
-            duration = int(element.get('Duration', 0))
-            power_low = float(element.get('PowerLow', 0.5))
-            power_high = float(element.get('PowerHigh', 0.45))
-            workout_info['segments'].append({
-                'type': 'cooldown',
-                'duration': duration,
-                'power_start': power_low,
-                'power_end': power_high
-            })
-        
-        elif element.tag == 'IntervalsT':
-            repeat = int(element.get('Repeat', 1))
-            on_duration = int(element.get('OnDuration', 60))
-            off_duration = int(element.get('OffDuration', 60))
-            on_power = float(element.get('OnPower', 0.9))
-            off_power = float(element.get('OffPower', 0.5))
-            
-            for i in range(repeat):
-                # Add work interval
-                workout_info['segments'].append({
-                    'type': 'interval_work',
-                    'duration': on_duration,
-                    'power': on_power
-                })
-                # Add rest interval (except after last repeat)
-                if i < repeat - 1 or off_duration > 0:
-                    workout_info['segments'].append({
-                        'type': 'interval_rest',
-                        'duration': off_duration,
-                        'power': off_power
-                    })
-    
-    return workout_info
+# ZWO parsing is now handled by the zwo_parser module
 
-def create_fit_file(segments: List[Dict], output_path: str, workout_name: str = "Workout", ftp: int = 250):
+def create_fit_file(segments: List[WorkoutSegment], output_path: str, workout_name: str = "Workout", ftp: int = 250):
     """Create FIT workout file from segments"""
     
     if not segments:
@@ -281,44 +213,44 @@ def create_fit_file(segments: List[Dict], output_path: str, workout_name: str = 
     for i, segment in enumerate(segments):
         # Duration is always time-based (type 0), value in milliseconds
         duration_type = 0
-        duration_value = segment['duration'] * 1000  # Convert to milliseconds
+        duration_value = segment.duration * 1000  # Convert to milliseconds
         
         # Target is always power-based (type 4), value in watts
         
         # Determine target power and intensity using reverse-engineered formula
-        if segment['type'] == 'warmup':
+        if segment.type == 'warmup':
             # For warmup, use power range with correct FIT encoding
             target_low, target_high = calculate_ftp_targets(
-                segment['power_start'], ftp=ftp, power_high_fraction=segment['power_end']
+                segment.power_start, ftp=ftp, power_high_fraction=segment.power_end
             )
             intensity = 2  # warmup
-            step_name = f"Warmup {segment['power_start']*100:.0f}-{segment['power_end']*100:.0f}%"
+            step_name = f"Warmup {segment.power_start*100:.0f}-{segment.power_end*100:.0f}%"
         
-        elif segment['type'] == 'cooldown':
+        elif segment.type == 'cooldown':
             # For cooldown, use power range with correct FIT encoding
             target_low, target_high = calculate_ftp_targets(
-                segment['power_start'], ftp=ftp, power_high_fraction=segment['power_end']
+                segment.power_start, ftp=ftp, power_high_fraction=segment.power_end
             )
             intensity = 3  # cooldown
-            step_name = f"Cooldown {segment['power_start']*100:.0f}-{segment['power_end']*100:.0f}%"
+            step_name = f"Cooldown {segment.power_start*100:.0f}-{segment.power_end*100:.0f}%"
         
-        elif segment['type'] == 'steady':
+        elif segment.type == 'steady':
             # For steady state, use single power value with correct FIT encoding
-            target_low, target_high = calculate_ftp_targets(segment['power'], ftp=ftp)
+            target_low, target_high = calculate_ftp_targets(segment.power, ftp=ftp)
             intensity = 0  # active
-            step_name = f"Steady {segment['power']*100:.0f}%"
+            step_name = f"Steady {segment.power*100:.0f}%"
         
-        elif segment['type'] == 'interval_work':
+        elif segment.type == 'interval_work':
             # For work intervals, use single power value with correct FIT encoding
-            target_low, target_high = calculate_ftp_targets(segment['power'], ftp=ftp)
+            target_low, target_high = calculate_ftp_targets(segment.power, ftp=ftp)
             intensity = 0  # active
-            step_name = f"Work {segment['power']*100:.0f}%"
+            step_name = f"Work {segment.power*100:.0f}%"
         
-        elif segment['type'] == 'interval_rest':
+        elif segment.type == 'interval_rest':
             # For rest intervals, use single power value with correct FIT encoding
-            target_low, target_high = calculate_ftp_targets(segment['power'], ftp=ftp)
+            target_low, target_high = calculate_ftp_targets(segment.power, ftp=ftp)
             intensity = 1  # rest
-            step_name = f"Rest {segment['power']*100:.0f}%"
+            step_name = f"Rest {segment.power*100:.0f}%"
         
         else:
             # Default case - use 50% FTP with correct FIT encoding
@@ -351,8 +283,8 @@ def convert_zwo_to_fit(zwo_path: str, fit_path: str = None, ftp: int = 250):
         fit_path = zwo_path.replace('.zwo', '.fit')
     
     try:
-        workout_info = parse_zwo_file(zwo_path)
-        create_fit_file(workout_info['segments'], fit_path, workout_info['name'], ftp)
+        workout = parse_zwo_to_workout(zwo_path)
+        create_fit_file(workout.segments, fit_path, workout.name, ftp)
         print(f"Converted: {zwo_path} -> {fit_path}")
         return True
     except Exception as e:

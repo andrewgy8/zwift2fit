@@ -2,7 +2,7 @@
 
 import matplotlib.pyplot as plt
 import numpy as np
-from zwift2fit import parse_zwo_file
+from zwo_parser import parse_zwo_to_workout
 from fitfile_viewer import GarminFITWorkoutVisualizer
 import argparse
 import os
@@ -38,20 +38,20 @@ class WorkoutComparator:
         
         for segment in segments:
             start_time = current_time
-            end_time = current_time + segment['duration']
+            end_time = current_time + segment.duration
             
             # Add start and end points
             time_points.extend([start_time, end_time])
             
             # Determine power value
-            if segment['type'] in ['warmup', 'cooldown']:
+            if segment.type in ['warmup', 'cooldown']:
                 # For warmup/cooldown, show power ramp
-                start_power = segment['power_start'] * self.ftp
-                end_power = segment['power_end'] * self.ftp
+                start_power = segment.power_start * self.ftp
+                end_power = segment.power_end * self.ftp
                 power_points.extend([start_power, end_power])
             else:
                 # Steady power
-                power = segment['power'] * self.ftp
+                power = segment.power * self.ftp
                 power_points.extend([power, power])
             
             current_time = end_time
@@ -91,8 +91,8 @@ class WorkoutComparator:
         
         # Parse both files
         print(f"Parsing ZWO file: {zwo_path}")
-        zwo_workout = parse_zwo_file(zwo_path)
-        zwo_segments = zwo_workout['segments']
+        zwo_workout = parse_zwo_to_workout(zwo_path)
+        zwo_segments = zwo_workout.segments
         
         print(f"Parsing FIT file: {fit_path}")
         fit_visualizer = GarminFITWorkoutVisualizer(ftp=self.ftp)
@@ -104,7 +104,7 @@ class WorkoutComparator:
             return
         
         # Calculate durations
-        zwo_total_duration = sum(seg['duration'] for seg in zwo_segments)
+        zwo_total_duration = sum(seg.duration for seg in zwo_segments)
         fit_total_duration = int(fit_workout['total_duration'])
         
         # Create figure with 4 subplots: 2 power profiles + 2 timelines
@@ -120,14 +120,14 @@ class WorkoutComparator:
         current_time = 0
         for segment in zwo_segments:
             start_min = current_time / 60
-            end_min = (current_time + segment['duration']) / 60
-            segment_color = self.intensity_colors.get(segment['type'], '#808080')
+            end_min = (current_time + segment.duration) / 60
+            segment_color = self.intensity_colors.get(segment.type, '#808080')
             ax_zwo_power.axvspan(start_min, end_min, alpha=0.2, color=segment_color, zorder=1)
-            current_time += segment['duration']
+            current_time += segment.duration
         
         ax_zwo_power.axhline(y=self.ftp, color='red', linestyle='--', alpha=0.7, label=f'FTP ({self.ftp}W)')
         ax_zwo_power.set_ylabel('Power (W)', fontsize=12)
-        ax_zwo_power.set_title(f'ZWO: {zwo_workout["name"]} ({zwo_total_duration//60}:{zwo_total_duration%60:02d})', 
+        ax_zwo_power.set_title(f'ZWO: {zwo_workout.name} ({zwo_total_duration//60}:{zwo_total_duration%60:02d})', 
                               fontsize=14, fontweight='bold')
         ax_zwo_power.grid(True, alpha=0.3)
         ax_zwo_power.legend()
@@ -165,11 +165,11 @@ class WorkoutComparator:
         
         current_time = 0
         for segment in zwo_segments:
-            segment_color = self.intensity_colors.get(segment['type'], '#808080')
+            segment_color = self.intensity_colors.get(segment.type, '#808080')
             zwo_colors.append(segment_color)
-            zwo_durations.append(segment['duration'] / 60)
+            zwo_durations.append(segment.duration / 60)
             zwo_starts.append(current_time / 60)
-            current_time += segment['duration']
+            current_time += segment.duration
         
         bars_zwo = ax_zwo_timeline.barh(range(len(zwo_segments)), zwo_durations, left=zwo_starts, 
                                        color=zwo_colors, alpha=0.8, edgecolor='black', linewidth=0.5)
@@ -221,7 +221,7 @@ class WorkoutComparator:
         steps_match = "✓" if len(zwo_segments) == len(fit_segments) else "✗"
         comparison_text += f"{'Steps':<20} {len(zwo_segments):<25} {len(fit_segments):<25} {steps_match:<10}\n"
         
-        comparison_text += f"{'Workout Name':<20} {zwo_workout['name']:<25} {fit_workout['name']:<25} {'✓' if zwo_workout['name'].strip() == fit_workout['name'].strip() else '✗':<10}\n"
+        comparison_text += f"{'Workout Name':<20} {zwo_workout.name:<25} {fit_workout['name']:<25} {'✓' if zwo_workout.name.strip() == fit_workout['name'].strip() else '✗':<10}\n"
         
         comparison_text += "\nFIRST 8 STEPS COMPARISON:\n"
         comparison_text += f"{'Step':<5} {'ZWO Type':<12} {'ZWO Duration':<12} {'ZWO Power':<15} {'FIT Duration':<12} {'FIT Power':<15} {'Match':<8}\n"
@@ -232,11 +232,11 @@ class WorkoutComparator:
             fit_seg = fit_segments[i]
             
             # ZWO info
-            zwo_dur_str = f"{zwo_seg['duration']//60}:{zwo_seg['duration']%60:02d}"
-            if zwo_seg['type'] in ['warmup', 'cooldown']:
-                zwo_power_str = f"{zwo_seg['power_start']*100:.0f}-{zwo_seg['power_end']*100:.0f}%"
+            zwo_dur_str = f"{zwo_seg.duration//60}:{zwo_seg.duration%60:02d}"
+            if zwo_seg.type in ['warmup', 'cooldown']:
+                zwo_power_str = f"{zwo_seg.power_start*100:.0f}-{zwo_seg.power_end*100:.0f}%"
             else:
-                zwo_power_str = f"{zwo_seg['power']*100:.0f}%"
+                zwo_power_str = f"{zwo_seg.power*100:.0f}%"
             
             # FIT info
             fit_dur_str = f"{int(fit_seg['duration'])//60}:{int(fit_seg['duration'])%60:02d}"
@@ -246,9 +246,9 @@ class WorkoutComparator:
                 fit_power_str = f"{fit_seg['power_target']:.0f}W"
             
             # Check if durations match (within 5 seconds)
-            duration_match = "✓" if abs(zwo_seg['duration'] - fit_seg['duration']) <= 5 else "✗"
+            duration_match = "✓" if abs(zwo_seg.duration - fit_seg['duration']) <= 5 else "✗"
             
-            comparison_text += f"{i+1:<5} {zwo_seg['type']:<12} {zwo_dur_str:<12} {zwo_power_str:<15} {fit_dur_str:<12} {fit_power_str:<15} {duration_match:<8}\n"
+            comparison_text += f"{i+1:<5} {zwo_seg.type:<12} {zwo_dur_str:<12} {zwo_power_str:<15} {fit_dur_str:<12} {fit_power_str:<15} {duration_match:<8}\n"
         
         if max(len(zwo_segments), len(fit_segments)) > 8:
             comparison_text += f"... and {max(len(zwo_segments), len(fit_segments)) - 8} more steps\n"
